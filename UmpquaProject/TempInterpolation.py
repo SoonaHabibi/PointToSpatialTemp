@@ -64,7 +64,7 @@ PrismTemp = pd.concat([latlon, df], axis=1)                       #data frame wi
 
 ###############
 ## creating points_list for each hour to do interpolation
-for i in range(len(event_name)):
+for i in range(1,2):#len(event_name)):
     DirName = event_name[i]
     path = dir + DirName +'/hourly/'
     allfiles = glob.glob(path + '*.csv')
@@ -72,6 +72,12 @@ for i in range(len(event_name)):
     EndDate = datetime.strptime(events.iloc[i,2],'%Y_%m_%d') + timedelta(days=1)
     duration = (EndDate - StartDate).days*24+(EndDate - StartDate).seconds/3600
     r_sq_Ar = []
+    max_tempAr = []
+    min_tempAr = []
+    mean_tempAr = []
+    available_gageAr = []
+    coef_Ar = []
+    intercept_Ar = []
     date_Ar = []
     for j in range(int(duration)):
         gageAr = []
@@ -96,9 +102,16 @@ for i in range(len(event_name)):
         ########
         ## we have data set for the interpolation
         x = np.array(prismAr).reshape(-1,1)
+        xx = np.array(prismAr)
         y = np.array(gageAr)
         model = LinearRegression().fit(x,y)
         r_sq = model.score(x,y)
+        max_tempAr.append(max(gageAr))
+        min_tempAr.append(min(gageAr))
+        mean_tempAr.append(np.mean(gageAr))
+        available_gageAr.append(len(gageAr))
+        coef_Ar.append(model.coef_)
+        intercept_Ar.append(model.intercept_)       
         r_sq_Ar.append(r_sq)
         date_Ar.append(date)
         a = model.coef_
@@ -109,10 +122,15 @@ for i in range(len(event_name)):
         if not os.path.exists(Tiffile_dir): os.mkdir(Tiffile_dir)
         Tiffile = Tiffile_dir + datetime.strftime(date, '%Y%m%d_%H%M%S') + '.tif'
         BF.CreateMatrixFileFloat(Tiffile, matrix, cols, rows, transform, proj)
+        labelx = 'PRISM'
+        labely = 'Gage'
+        plotdir = Tiffile_dir + 'plot/'
+        if not os.path.exists(plotdir): os.mkdir(plotdir)
+        Outplot = plotdir + datetime.strftime(date, '%Y%m%d_%H%M%S') + '.jpg'
+        BF.PlotLinearRelationship(xx,y,labelx,labely,Outplot)
         
-        
-    r_sq_df = pd.DataFrame([date_Ar, r_sq_Ar]).transpose()
-    r_sq_df.columns = ['date','R2']
+    r_sq_df = pd.DataFrame([date_Ar, r_sq_Ar, available_gageAr, max_tempAr, min_tempAr, mean_tempAr, intercept_Ar, coef_Ar]).transpose()
+    r_sq_df.columns = ['date','R2', '#gage', 'max', 'min', 'avg', 'interc', 'coef']
     r_sq_out = dir + 'temp_interpol/r_sq/' + event_name[i] + '.csv'
     r_sq_df.to_csv(r_sq_out, index=False)
 
@@ -121,21 +139,35 @@ for i in range(len(event_name)):
 
 
 
+###############################################################################
+# PlotLinearRelationship
+############################################################################### 
+def PlotLinearRelationship(x,y,labelx,labely,Outplot):
+    import numpy as np
+    import matplotlib.pyplot as plt 
+    from scipy import stats    
+    font = {'family' : 'normal','size'   : 12}
 
+    plt.rc('font', **font)
 
+    plt.plot(x,y,'o', alpha=0.5)
 
+    LinearReg=stats.linregress(x,y)   
 
+    Slope=LinearReg[0]
+    Interc=LinearReg[1]
+    rvalue=LinearReg[2]    
+    pvalue=LinearReg[3]
+    predict_y = Interc + Slope * np.array(x)
+    
+    plt.plot(x,predict_y,'-', lw=2, color='red')
+    
+    plt.xlabel(labelx)
+    plt.ylabel(labely)
+    
+    strtitle='Correl=' + str(round(rvalue,2))+ '; pvalue=' + str(round(pvalue,2)) 
 
-
-#for i in range(len(event_name)):                 # this part is for fixing the time format
-#    DirName = event_name[i]
-#    path = dir + DirName +'/hourly/'
-#    allfiles = glob.glob(path + '*.csv')
-#    for ii in range(len(allfiles)):
-#        GagePath = allfiles[ii]
-#        gage_df = pd.read_csv(GagePath)
-#
-#        if len (gage_df['date'].iloc[0])>19:
-#            gage_df['date'] = gage_df['date'].apply(lambda x: x[0:19])
-#            gage_df.to_csv(GagePath, index=False)
-#        print (gage_df['date'].iloc[0])
+    plt.title(strtitle, fontsize=14)
+    
+    plt.savefig(Outplot)
+    plt.close()
